@@ -1,0 +1,16 @@
+{
+  "report-fact-gate": {
+    "PreToolUse": [
+      {
+        "matcher": "write_file|edit_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ../scripts/check_report_hook.py",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

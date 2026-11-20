@@ -1,0 +1,63 @@
+# Equity Pulse — Universe, Safety & Scoring Configuration
+# Strictly research-only; never connect brokerage execution APIs.
+
+allowed_exchanges:
+  - NYSE
+  - NASDAQ
+  - NYSE American
+  - NMS
+  - NGM
+  - NCM
+  - NYQ
+  - ASE
+
+excluded_quote_types:
+  - ETF
+  - MUTUALFUND
+  - INDEX
+  - CRYPTOCURRENCY
+  - CURRENCY
+  - FUTURE
+
+# Always excluded from screening and report generation
+do_not_trade:
+  - GOOG
+  - GOOGL
+
+liquidity:
+  min_market_cap: 50000000          # $50M floor
+  min_avg_dollar_vol_20d: 1000000   # $1M 20d ADDV floor
+  min_price: 2.00                   # Avoid sub-$2 delisting noise
+
+micro_cap:
+  upper_bound_market_cap: 300000000 # $50M-$300M micro-cap safeguard band
+  min_short_float_shares: 10000000  # Hard-reject micro-cap shorts if float < 10M + short/FTD spike
+  baby_shelf_float_cap: 75000000    # SEC Form S-3 baby-shelf rule threshold ($75M public float)
+  dilution_lookback_days: 90        # Flag active S-3 / 424B5 within 90 days
+
+cooldown_trading_days:
+  bucket_1: 3
+  bucket_2: 10
+  bucket_3: 30
+  sec_filing_override_hours: 24     # Allow re-surface if fresh 8-K or Form 4 arrived in last 24h
+
+validation:
+  min_reward_risk_ratio: 2.0
+  max_candidates_per_bucket: 6
+  numeric_tolerance_pct: 0.02       # 2% rounding tolerance for report fact-validator
+
+# Sample liquid + mid/small-cap universe for fast --smoke end-to-end verification
+smoke_tickers:
+  - AAPL
+  - MSFT
+  - NVDA
+  - AMD
+  - PLTR
+  - SOFI
+  - HIMS
+  - ELF
+  - CELH
+  - RKLB
+  - AFRM
+  - SMCI
+  - GOOGL   # Included intentionally to verify do_not_trade blocklist filters it out
