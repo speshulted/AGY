@@ -41,6 +41,8 @@ class UniverseConfig:
     min_reward_risk_ratio: float = 2.0
     max_candidates_per_bucket: int = 6
     numeric_tolerance_pct: float = 0.02
+    ohlcv_chunk_size: int = 150
+    max_pass2_enrich: int = 120
     smoke_tickers: list[str] = field(default_factory=list)
 
 
@@ -58,6 +60,7 @@ def load_universe_config(config_path: Path = CONFIG_PATH) -> UniverseConfig:
     micro = raw.get("micro_cap", {})
     cd = raw.get("cooldown_trading_days", {})
     val = raw.get("validation", {})
+    fscan = raw.get("full_scan", {})
 
     return UniverseConfig(
         allowed_exchanges={str(x).upper() for x in raw.get("allowed_exchanges", ["NYSE", "NASDAQ", "NYSE AMERICAN"])},
@@ -79,6 +82,8 @@ def load_universe_config(config_path: Path = CONFIG_PATH) -> UniverseConfig:
         min_reward_risk_ratio=float(val.get("min_reward_risk_ratio", 2.0)),
         max_candidates_per_bucket=int(val.get("max_candidates_per_bucket", 6)),
         numeric_tolerance_pct=float(val.get("numeric_tolerance_pct", 0.02)),
+        ohlcv_chunk_size=int(fscan.get("ohlcv_chunk_size", 150)),
+        max_pass2_enrich=int(fscan.get("max_pass2_enrich", 120)),
         smoke_tickers=[str(t).upper() for t in raw.get("smoke_tickers", [])],
     )
 

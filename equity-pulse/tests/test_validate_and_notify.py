@@ -75,3 +75,4 @@ def test_notify_dry_run_formats_digest(tmp_path: Path) -> None:
     out = send_notifications(rep, dry_run=True)
     assert out["dry_run"] is True
     assert "[LONG] ACME" in out["digest"]
+    assert out["email_body"] == VALID_REPORT

@@ -183,86 +183,128 @@ def fetch_stooq_ohlcv(ticker: str, timeout: float = 15.0) -> pd.DataFrame:
     return df.tail(260)
 
 
-def fetch_batch_market_snapshots(
-    tickers: list[str],
-    period: str = "1y",
-) -> dict[str, MarketSnapshot]:
-    """Fetch OHLCV & metadata in batches via yfinance with Stooq fallback."""
+def _build_yf_session() -> Any:
     import os
-    import yfinance as yf  # lazy import for fast test startup
+
+    ca_bundle = os.environ.get("CURL_CA_BUNDLE") or os.environ.get("REQUESTS_CA_BUNDLE")
+    if not ca_bundle:
+        return None
+    try:
+        from curl_cffi import requests as curl_requests
+
+        return curl_requests.Session(impersonate="chrome", verify=ca_bundle)
+    except Exception:
+        return None
+
+
+def fetch_bulk_ohlcv_snapshots(
+    tickers: list[str],
+    exchange_map: dict[str, str] | None = None,
+    period: str = "1y",
+    chunk_size: int = 150,
+    use_stooq_fallback: bool = False,
+) -> dict[str, MarketSnapshot]:
+    """Pass-1 bulk OHLCV fetcher: chunks tickers through yf.download without slow .info calls."""
+    import yfinance as yf
 
     clean = list(dict.fromkeys(t.upper() for t in tickers if t))
     if not clean:
         return {}
 
-    yf_session = None
-    ca_bundle = os.environ.get("CURL_CA_BUNDLE") or os.environ.get("REQUESTS_CA_BUNDLE")
-    if ca_bundle:
-        try:
-            from curl_cffi import requests as curl_requests
-
-            yf_session = curl_requests.Session(impersonate="chrome", verify=ca_bundle)
-        except Exception:
-            yf_session = None
-
+    yf_session = _build_yf_session()
+    exch_lookup = exchange_map or {}
     snapshots: dict[str, MarketSnapshot] = {}
-    try:
-        dl_kwargs: dict[str, Any] = {
-            "tickers": clean,
-            "period": period,
-            "interval": "1d",
-            "group_by": "ticker",
-            "auto_adjust": False,
-            "progress": False,
-            "threads": False,
-        }
-        if yf_session is not None:
-            dl_kwargs["session"] = yf_session
-        raw = yf.download(**dl_kwargs)
-    except Exception:
-        raw = pd.DataFrame()
 
-    for sym in clean:
-        df = pd.DataFrame()
-        if not raw.empty:
-            if isinstance(raw.columns, pd.MultiIndex):
-                if sym in raw.columns.get_level_values(0):
-                    df = raw[sym].dropna(how="all")
-            elif len(clean) == 1:
-                df = raw.dropna(how="all")
-
-        if df.empty:
-            try:
-                df = fetch_stooq_ohlcv(sym)
-            except Exception:
-                df = pd.DataFrame()
-
-        meta: dict[str, Any] = {}
+    for start in range(0, len(clean), max(1, chunk_size)):
+        batch = clean[start : start + chunk_size]
         try:
-            tk = yf.Ticker(sym, session=yf_session) if yf_session is not None else yf.Ticker(sym)
-            info = tk.info or {}
-            meta = {
-                "market_cap": info.get("marketCap"),
-                "float_shares": info.get("floatShares"),
-                "enterprise_value": info.get("enterpriseValue"),
-                "exchange": info.get("exchange", ""),
-                "quote_type": info.get("quoteType", "EQUITY"),
+            dl_kwargs: dict[str, Any] = {
+                "tickers": batch,
+                "period": period,
+                "interval": "1d",
+                "group_by": "ticker",
+                "auto_adjust": False,
+                "progress": False,
+                "threads": False,
             }
-            cal = tk.calendar
-            if isinstance(cal, dict) and cal.get("Earnings Date"):
-                ed = cal["Earnings Date"][0]
-                if hasattr(ed, "date"):
-                    ed = ed.date()
-                if isinstance(ed, dt.date):
-                    meta["days_to_earnings"] = (ed - dt.date.today()).days
+            if yf_session is not None:
+                dl_kwargs["session"] = yf_session
+            raw = yf.download(**dl_kwargs)
         except Exception:
-            pass
+            raw = pd.DataFrame()
 
-        snap = compute_ohlcv_metrics(sym, df, meta=meta)
-        if snap is not None:
-            snapshots[sym] = snap
+        for sym in batch:
+            df = pd.DataFrame()
+            if not raw.empty:
+                if isinstance(raw.columns, pd.MultiIndex):
+                    if sym in raw.columns.get_level_values(0):
+                        df = raw[sym].dropna(how="all")
+                elif len(batch) == 1:
+                    df = raw.dropna(how="all")
+
+            if df.empty and use_stooq_fallback:
+                try:
+                    df = fetch_stooq_ohlcv(sym)
+                except Exception:
+                    df = pd.DataFrame()
+
+            meta = {"exchange": exch_lookup.get(sym, ""), "quote_type": "EQUITY"}
+            snap = compute_ohlcv_metrics(sym, df, meta=meta)
+            if snap is not None:
+                snapshots[sym] = snap
 
     return snapshots
+
+
+def enrich_snapshot_metadata(
+    snap: MarketSnapshot,
+    yf_session: Any = None,
+) -> MarketSnapshot:
+    """Pass-2 targeted metadata enrichment (market_cap, float_shares, EV, earnings) via yf.Ticker."""
+    import yfinance as yf
+
+    session = yf_session if yf_session is not None else _build_yf_session()
+    try:
+        tk = yf.Ticker(snap.ticker, session=session) if session is not None else yf.Ticker(snap.ticker)
+        info = tk.info or {}
+        if info.get("marketCap") is not None:
+            snap.market_cap = info.get("marketCap")
+        if info.get("floatShares") is not None:
+            snap.float_shares = info.get("floatShares")
+        if info.get("enterpriseValue") is not None:
+            snap.enterprise_value = info.get("enterpriseValue")
+        if info.get("exchange"):
+            snap.exchange = str(info.get("exchange")).upper()
+        if info.get("quoteType"):
+            snap.quote_type = str(info.get("quoteType")).upper()
+        cal = tk.calendar
+        if isinstance(cal, dict) and cal.get("Earnings Date"):
+            ed = cal["Earnings Date"][0]
+            if hasattr(ed, "date"):
+                ed = ed.date()
+            if isinstance(ed, dt.date):
+                snap.days_to_earnings = (ed - dt.date.today()).days
+    except Exception:
+        pass
+    return snap
+
+
+def fetch_batch_market_snapshots(
+    tickers: list[str],
+    period: str = "1y",
+) -> dict[str, MarketSnapshot]:
+    """Fetch OHLCV & full metadata for a small list (used by --smoke and --tickers)."""
+    snaps = fetch_bulk_ohlcv_snapshots(
+        tickers,
+        period=period,
+        chunk_size=100,
+        use_stooq_fallback=True,
+    )
+    yf_session = _build_yf_session()
+    for sym, snap in snaps.items():
+        if sym not in {"SPY", "IWM"}:
+            enrich_snapshot_metadata(snap, yf_session=yf_session)
+    return snaps
 
 
 class MarketCacheStore:

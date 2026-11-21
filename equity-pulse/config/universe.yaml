@@ -46,6 +46,10 @@ validation:
   max_candidates_per_bucket: 6
   numeric_tolerance_pct: 0.02       # 2% rounding tolerance for report fact-validator
 
+full_scan:
+  ohlcv_chunk_size: 150             # Tickers per yfinance batch download chunk
+  max_pass2_enrich: 120             # Top balanced Long/Short Pass-1 qualifiers enriched via SEC EDGAR
+
 # Sample liquid + mid/small-cap universe for fast --smoke end-to-end verification
 smoke_tickers:
   - AAPL

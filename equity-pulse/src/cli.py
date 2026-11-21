@@ -12,8 +12,15 @@ from typing import Any
 from src.config import DATA_DIR, REPORTS_DIR, load_env, load_universe_config
 from src.ingest.finra_short import fetch_recent_finra_regsho, summarize_short_trends
 from src.ingest.macro_earnings import fetch_finnhub_earnings_signal, fetch_macro_context
-from src.ingest.market_data import MarketCacheStore, fetch_batch_market_snapshots
+from src.ingest.market_data import (
+    MarketCacheStore,
+    _build_yf_session,
+    enrich_snapshot_metadata,
+    fetch_batch_market_snapshots,
+    fetch_bulk_ohlcv_snapshots,
+)
 from src.ingest.sec_edgar import SecEdgarClient
+from src.ingest.universe import fetch_us_equity_universe, select_pass2_candidates
 from src.ledger.store import SignalLedger
 from src.notify.push import send_notifications
 from src.screener.bucket_breakouts import score_bucket_1
@@ -61,20 +68,72 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     load_env()
     as_of = _parse_date(args.date)
     cfg = load_universe_config()
-    tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()] if args.tickers else list(cfg.smoke_tickers)
-    if not tickers:
-        print("No tickers specified for ingestion.", file=sys.stderr)
-        return 1
-
-    # Always include benchmarks SPY and IWM for macro regime context
-    fetch_list = list(dict.fromkeys(tickers + ["SPY", "IWM"]))
-    snapshots = fetch_batch_market_snapshots(fetch_list)
-    finra_maps = fetch_recent_finra_regsho(as_of, lookback_trading_days=5 if args.smoke else 20)
     sec_client = SecEdgarClient()
     cache = MarketCacheStore()
 
+    finra_days = 5 if args.smoke else 20
+    finra_maps = fetch_recent_finra_regsho(as_of, lookback_trading_days=finra_days)
+
+    mode = "smoke" if args.smoke else ("custom" if args.tickers else "full_us_twopass")
+    total_directory_size = 0
+    universe_size = 0
+    pass1_downloaded = 0
+    pass2_selected: list[dict[str, Any]] = []
+
+    if args.tickers or args.smoke:
+        tickers = (
+            [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
+            if args.tickers
+            else list(cfg.smoke_tickers)
+        )
+        if not tickers:
+            print("No tickers specified for ingestion.", file=sys.stderr)
+            return 1
+        universe_size = len(tickers)
+        fetch_list = list(dict.fromkeys(tickers + ["SPY", "IWM"]))
+        snapshots = fetch_batch_market_snapshots(fetch_list)
+        pass1_downloaded = len([t for t in tickers if t in snapshots])
+        target_tickers = [t for t in tickers if t in snapshots]
+    else:
+        # Full US Market Two-Pass Scanner:
+        # Pass 1: Discover all NYSE/NASDAQ/NYSE American SEC-reporting common equities & bulk OHLCV
+        cik_map = sec_client.get_ticker_cik_map()
+        universe_meta = fetch_us_equity_universe(cik_map, cfg)
+        all_symbols = list(universe_meta.keys())
+        total_directory_size = len(all_symbols)
+        if args.max_universe and args.max_universe > 0:
+            all_symbols = all_symbols[: args.max_universe]
+        universe_size = len(all_symbols)
+
+        exch_map = {sym: universe_meta[sym]["exchange"] for sym in all_symbols}
+        print(
+            f"[Pass 1] Discovered {total_directory_size} US SEC-reporting common equities; "
+            f"downloading bulk OHLCV for {universe_size} (chunks of {cfg.ohlcv_chunk_size})...",
+            file=sys.stderr,
+        )
+        snapshots = fetch_bulk_ohlcv_snapshots(
+            all_symbols + ["SPY", "IWM"],
+            exchange_map=exch_map,
+            chunk_size=cfg.ohlcv_chunk_size,
+            use_stooq_fallback=False,
+        )
+        pass1_downloaded = len([s for s in all_symbols if s in snapshots])
+
+        max_enrich = args.max_enrich if args.max_enrich and args.max_enrich > 0 else cfg.max_pass2_enrich
+        equity_snaps = {s: snapshots[s] for s in all_symbols if s in snapshots}
+        pass2_selected = select_pass2_candidates(equity_snaps, finra_maps, cfg, max_enrich=max_enrich)
+        target_tickers = [item["ticker"] for item in pass2_selected]
+        print(
+            f"[Pass 2] Enriching {len(target_tickers)} balanced Long/Short qualifiers "
+            f"(from {pass1_downloaded} OHLCV snapshots) via yfinance metadata & SEC EDGAR...",
+            file=sys.stderr,
+        )
+        yf_session = _build_yf_session()
+        for sym in target_tickers:
+            enrich_snapshot_metadata(snapshots[sym], yf_session=yf_session)
+
     ingested = 0
-    for sym in tickers:
+    for sym in target_tickers:
         snap = snapshots.get(sym)
         if snap is None:
             continue
@@ -110,7 +169,22 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     )
     cache.upsert_record(as_of.isoformat(), "__MACRO__", macro.to_dict())
 
-    print(json.dumps({"run_date": as_of.isoformat(), "ingested_tickers": ingested, "macro": macro.to_dict()}, indent=2))
+    print(
+        json.dumps(
+            {
+                "run_date": as_of.isoformat(),
+                "mode": mode,
+                "us_directory_total": total_directory_size or universe_size,
+                "universe_scanned": universe_size,
+                "pass1_ohlcv_loaded": pass1_downloaded,
+                "pass2_long_qualifiers": sum(1 for x in pass2_selected if x["side"] == "LONG"),
+                "pass2_short_qualifiers": sum(1 for x in pass2_selected if x["side"] == "SHORT"),
+                "ingested_tickers": ingested,
+                "macro": macro.to_dict(),
+            },
+            indent=2,
+        )
+    )
     return 0
 
 
@@ -307,8 +381,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_ingest = sub.add_parser("ingest", help="Ingest OHLCV, SEC EDGAR, FINRA Reg SHO, and optional macro feeds")
     p_ingest.add_argument("--date", default=None, help="Run date YYYY-MM-DD (default: today)")
-    p_ingest.add_argument("--smoke", action="store_true", help="Fast smoke ingestion on sample universe")
+    p_ingest.add_argument("--smoke", action="store_true", help="Fast smoke ingestion on 13-ticker sample universe")
     p_ingest.add_argument("--tickers", default=None, help="Comma-separated ticker override")
+    p_ingest.add_argument("--max-universe", type=int, default=0, help="Optional cap on Pass-1 universe size (0 = all US equities)")
+    p_ingest.add_argument("--max-enrich", type=int, default=0, help="Optional cap on Pass-2 SEC enrichment count (default: universe.yaml)")
     p_ingest.set_defaults(func=cmd_ingest)
 
     p_screen = sub.add_parser("screen", help="Run Stage 1 deterministic 3-bucket screener")

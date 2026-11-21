@@ -58,7 +58,7 @@ def send_notifications(
     digest = format_mobile_digest(text)
 
     if dry_run:
-        return {"dry_run": True, "sent": [], "digest": digest}
+        return {"dry_run": True, "sent": [], "digest": digest, "email_body": text}
 
     sent: list[str] = []
     errors: list[str] = []
@@ -97,10 +97,10 @@ def send_notifications(
     if smtp_host and smtp_to:
         try:
             msg = EmailMessage()
-            msg["Subject"] = f"Equity Pulse Digest — {Path(report_path).stem}"
+            msg["Subject"] = f"Equity Pulse Daily Research Brief — {Path(report_path).stem}"
             msg["From"] = os.getenv("SMTP_FROM", os.getenv("SMTP_USER", "equity-pulse@localhost"))
             msg["To"] = smtp_to
-            msg.set_content(digest)
+            msg.set_content(text)
             port = int(os.getenv("SMTP_PORT", "587"))
             with smtplib.SMTP(smtp_host, port, timeout=timeout) as server:
                 server.starttls()
