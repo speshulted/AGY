@@ -94,8 +94,9 @@ critic_prompt = (
     f"Follow the role spec in `{repo_root / '.agents/agents/risk-critic.md'}` and rules in `{repo_root / '.agents/AGENTS.md'}`. "
     f"Audit the Stage 2 drafts below against `{candidates_path}` and `{repo_root / 'config/universe.yaml'}`.\n"
     f"Drop weak, sector-inappropriate (e.g., bank Altman Z), or non-compliant setups, write the final verified report to `{report_path}` "
-    "opening with a `## Plain-English Summary` section and ensuring EVERY surviving finding and EVERY rejection includes clear, jargon-free plain-English interpretation alongside exact verified numbers, "
-    "and return a brief summary of surviving setups and rejections.\n\n"
+    "opening with `## Plain-English Summary` and `## Prior-Day Recommendation Accuracy Review` (using `previous_day_accuracy` verbatim from the candidates JSON), "
+    "followed by separate `## Investing Recommendations (Long)` and `## Short Recommendations` sections where EVERY surviving finding and EVERY rejection includes clear, jargon-free plain-English interpretation alongside exact verified numbers, "
+    "and return a brief summary of prior-day accuracy, surviving setups, and rejections.\n\n"
     f"## Stage 2 Draft — Buckets 1 & 2\n{drafts[0]}\n\n"
     f"## Stage 2 Draft — Bucket 3\n{drafts[1]}\n"
 )
@@ -112,6 +113,12 @@ await call_tool(
     CommandLine=f"Set-Location '{repo_root}'; & '{python_exe}' -m src.cli validate-report --report '{report_path}' --candidates '{candidates_path}'",
     WaitMsBeforeAsync=10000,
     toolSummary="Validate daily report against facts and invariants",
+)
+await call_tool(
+    "run_command",
+    CommandLine=f"Set-Location '{repo_root}'; & '{python_exe}' -m src.cli render-html --report '{report_path}' --candidates '{candidates_path}'",
+    WaitMsBeforeAsync=10000,
+    toolSummary="Render graphic HTML web dashboard for daily report",
 )
 await call_tool(
     "run_command",

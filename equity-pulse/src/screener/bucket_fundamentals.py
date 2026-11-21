@@ -63,24 +63,66 @@ def score_bucket_3(record: dict[str, Any], cfg: UniverseConfig) -> list[dict[str
 
     candidates: list[dict[str, Any]] = []
 
-    # --- LONG: Fundamental Value ---
+    # --- LONG: Fundamental Investing (Deep Value OR Quality Growth/GARP) ---
     pos_growth = bool(
         ttm_growth is not None and ttm_growth > 0
         and (qoq_growth is None or qoq_growth > 0)
     )
     cash_quality = bool(ocf is not None and net_income is not None and ocf > net_income)
-    low_leverage = bool(net_debt_ebitda is not None and net_debt_ebitda < 2.5)
-    high_fcf_yield = bool(fcf_yield_ev is not None and fcf_yield_ev >= 0.07)
+    low_leverage = bool(net_debt_ebitda is not None and net_debt_ebitda < cfg.max_net_debt_ebitda)
+    high_fcf_yield = bool(fcf_yield_ev is not None and fcf_yield_ev >= cfg.value_min_fcf_yield_ev)
 
-    if pos_growth and high_fcf_yield and cash_quality and low_leverage and near_52w_low and market.get("stabilizing_rs", True):
-        score = 70.0 + min((fcf_yield_ev - 0.07) * 200.0, 20.0)
-        reasons = [
-            f"FCF/EV={fcf_yield_ev * 100:.1f}% (>=7%)",
-            f"TTM rev growth={ttm_growth * 100:.1f}%",
-            "OCF > Net Income (high cash conversion)",
-            f"Net Debt/EBITDA={net_debt_ebitda:.2f}x (<2.5x)",
-            "Within 25% of 52w low with stabilizing RS",
-        ]
+    sma50 = market.get("sma50")
+    sma200 = market.get("sma200")
+    healthy_trend = bool(
+        (sma50 is not None and close > sma50)
+        or (sma200 is not None and close > sma200)
+    )
+    is_value_long = (
+        pos_growth
+        and high_fcf_yield
+        and cash_quality
+        and low_leverage
+        and near_52w_low
+        and market.get("stabilizing_rs", True)
+    )
+    is_growth_long = (
+        ttm_growth is not None
+        and ttm_growth >= cfg.growth_min_ttm_rev_growth
+        and fcf is not None
+        and fcf > 0
+        and cash_quality
+        and low_leverage
+        and healthy_trend
+    )
+
+    if is_value_long or is_growth_long:
+        reasons: list[str] = []
+        if is_value_long and fcf_yield_ev is not None:
+            score = 72.0 + min((fcf_yield_ev - cfg.value_min_fcf_yield_ev) * 200.0, 20.0)
+            style = "Value Investing"
+            reasons.extend(
+                [
+                    f"Value Investing: FCF/EV={fcf_yield_ev * 100:.1f}% (>={cfg.value_min_fcf_yield_ev * 100:.0f}%)",
+                    f"TTM rev growth={ttm_growth * 100:.1f}%",
+                    "OCF > Net Income (high cash conversion)",
+                    f"Net Debt/EBITDA={net_debt_ebitda:.2f}x (<{cfg.max_net_debt_ebitda:.1f}x)",
+                    "Within 25% of 52w low with stabilizing RS",
+                ]
+            )
+        else:
+            score = 70.0 + min((ttm_growth - cfg.growth_min_ttm_rev_growth) * 80.0, 20.0)
+            style = "Quality Growth Investing"
+            reasons.extend(
+                [
+                    f"Quality Growth Investing: TTM rev growth={ttm_growth * 100:.1f}% (>={cfg.growth_min_ttm_rev_growth * 100:.0f}%)",
+                    f"Positive FCF=${fcf:,.0f}" + (f" (FCF/EV={fcf_yield_ev * 100:.1f}%)" if fcf_yield_ev is not None else ""),
+                    "OCF > Net Income (high cash conversion)",
+                    f"Net Debt/EBITDA={net_debt_ebitda:.2f}x (<{cfg.max_net_debt_ebitda:.1f}x)",
+                    "Healthy trend (above SMA50/SMA200)",
+                ]
+            )
+
         levels = _build_fundamental_levels("LONG", close, cfg.min_reward_risk_ratio)
         candidates.append(
             {
@@ -88,6 +130,7 @@ def score_bucket_3(record: dict[str, Any], cfg: UniverseConfig) -> list[dict[str
                 "bucket": 3,
                 "horizon": "1-6m+",
                 "direction": "LONG",
+                "strategy_style": style,
                 "score": round(score, 2),
                 "market_cap": mcap,
                 "rvol_20d": round(market.get("rvol_20d") or 0.0, 2),

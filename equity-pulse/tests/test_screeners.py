@@ -133,6 +133,28 @@ def test_bucket_3_value_long_and_forensic_short() -> None:
     assert len(shorts) == 1 and shorts[0]["direction"] == "SHORT"
     assert any("BABY-SHELF" in w for w in shorts[0]["warnings"])
 
+    # Quality Growth Investing Long (not near 52w low, but >=15% growth + positive FCF + OCF>NI + uptrend)
+    growth_rec = _base_record("GRWT", mcap=2_500_000_000)
+    growth_rec["market"]["close"] = 60.0
+    growth_rec["market"]["low_52w"] = 30.0
+    growth_rec["market"]["sma50"] = 54.0
+    growth_rec["market"]["sma200"] = 48.0
+    growth_rec["sec"]["dilution"]["has_active_shelf_90d"] = False
+    growth_rec["sec"]["fundamentals"] = {
+        "ttm_revenue_growth": 0.24,
+        "qoq_revenue_growth": 0.08,
+        "free_cash_flow": 90_000_000,
+        "operating_cash_flow": 110_000_000,
+        "net_income": 80_000_000,
+        "net_debt": 50_000_000,
+        "ebitda": 130_000_000,
+        "accrual_ratio": -0.03,
+    }
+    growth_longs = score_bucket_3(growth_rec, cfg)
+    assert len(growth_longs) == 1
+    assert growth_longs[0]["direction"] == "LONG"
+    assert growth_longs[0]["strategy_style"] == "Quality Growth Investing"
+
 
 def test_ledger_cooldown_and_24h_sec_override(tmp_path: Path) -> None:
     cfg = load_universe_config()

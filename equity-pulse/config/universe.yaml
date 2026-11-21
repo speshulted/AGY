@@ -46,6 +46,13 @@ validation:
   max_candidates_per_bucket: 6
   numeric_tolerance_pct: 0.02       # 2% rounding tolerance for report fact-validator
 
+dual_strategy:
+  long_slots_per_bucket: 3          # Dedicated Investing (Long) slots per bucket
+  short_slots_per_bucket: 3         # Dedicated Short slots per bucket
+  value_min_fcf_yield_ev: 0.07      # Bucket 3 Value Long: FCF / EV >= 7%
+  growth_min_ttm_rev_growth: 0.15   # Bucket 3 Quality Growth Long: TTM rev growth >= 15%
+  max_net_debt_ebitda: 2.5
+
 full_scan:
   ohlcv_chunk_size: 150             # Tickers per yfinance batch download chunk
   max_pass2_enrich: 120             # Top balanced Long/Short Pass-1 qualifiers enriched via SEC EDGAR

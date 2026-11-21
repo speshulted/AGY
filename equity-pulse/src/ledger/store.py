@@ -80,12 +80,23 @@ class SignalLedger:
                     alpha_iwm_20d REAL,
                     max_favorable_excursion REAL,
                     max_adverse_excursion REAL,
+                    latest_price REAL,
+                    latest_date TEXT,
+                    latest_ret REAL,
                     outcome_status TEXT NOT NULL DEFAULT 'OPEN'
                         CHECK(outcome_status IN ('OPEN', 'HIT_TARGET', 'STOPPED_OUT', 'TIME_EXPIRED')),
                     graded_at TEXT NOT NULL
                 );
                 """
             )
+            # Non-destructive migration for existing SQLite databases
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(signal_grades)").fetchall()}
+            if "latest_price" not in cols:
+                conn.execute("ALTER TABLE signal_grades ADD COLUMN latest_price REAL")
+            if "latest_date" not in cols:
+                conn.execute("ALTER TABLE signal_grades ADD COLUMN latest_date TEXT")
+            if "latest_ret" not in cols:
+                conn.execute("ALTER TABLE signal_grades ADD COLUMN latest_ret REAL")
             conn.commit()
 
     def record_signal(self, signal: dict[str, Any]) -> int:
@@ -244,13 +255,19 @@ class SignalLedger:
                 if outcome == "OPEN" and len(bars) >= horizon_expiry_days.get(int(sig["bucket"]), 20):
                     outcome = "TIME_EXPIRED"
 
+                latest_bar = bars[-1]
+                latest_price = round(float(latest_bar["close"]), 4)
+                latest_date = str(latest_bar["date"])
+                latest_ret = round(signed_return(direction, p0, latest_price), 6)
+
                 conn.execute(
                     """
                     INSERT INTO signal_grades (
                         signal_id, ret_1d, ret_5d, ret_20d, ret_60d,
                         alpha_spy_20d, alpha_iwm_20d, max_favorable_excursion,
-                        max_adverse_excursion, outcome_status, graded_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        max_adverse_excursion, latest_price, latest_date, latest_ret,
+                        outcome_status, graded_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(signal_id) DO UPDATE SET
                         ret_1d = excluded.ret_1d,
                         ret_5d = excluded.ret_5d,
@@ -260,6 +277,9 @@ class SignalLedger:
                         alpha_iwm_20d = excluded.alpha_iwm_20d,
                         max_favorable_excursion = excluded.max_favorable_excursion,
                         max_adverse_excursion = excluded.max_adverse_excursion,
+                        latest_price = excluded.latest_price,
+                        latest_date = excluded.latest_date,
+                        latest_ret = excluded.latest_ret,
                         outcome_status = excluded.outcome_status,
                         graded_at = excluded.graded_at
                     """,
@@ -273,6 +293,9 @@ class SignalLedger:
                         alpha_iwm_20d,
                         round(mfe, 6),
                         round(mae, 6),
+                        latest_price,
+                        latest_date,
+                        latest_ret,
                         outcome,
                         now_iso,
                     ),
@@ -280,6 +303,126 @@ class SignalLedger:
                 graded_count += 1
             conn.commit()
         return graded_count
+
+    def get_previous_day_accuracy(self, as_of: dt.date) -> dict[str, Any]:
+        """Analyze next-day accuracy of the most recent prior run_date (< as_of)."""
+        as_of_iso = as_of.isoformat()
+        with self._connect() as conn:
+            prev_row = conn.execute(
+                "SELECT MAX(run_date) AS prev_date FROM signals WHERE run_date < ?",
+                (as_of_iso,),
+            ).fetchone()
+            prev_date = prev_row["prev_date"] if prev_row and prev_row["prev_date"] else None
+            if not prev_date:
+                return {
+                    "as_of": as_of_iso,
+                    "previous_run_date": None,
+                    "total_recommendations": 0,
+                    "evaluated_count": 0,
+                    "hit_rate_pct": None,
+                    "profit_factor": None,
+                    "avg_signed_return_pct": None,
+                    "long_accuracy": {"count": 0, "hits": 0, "hit_rate_pct": None},
+                    "short_accuracy": {"count": 0, "hits": 0, "hit_rate_pct": None},
+                    "items": [],
+                    "plain_english_summary": "No prior-day recommendations recorded yet—today's picks will be graded automatically on the next trading day.",
+                }
+
+            rows = conn.execute(
+                """
+                SELECT s.id, s.run_date, s.ticker, s.direction, s.bucket, s.ref_price,
+                       s.stop_price, s.target_price,
+                       g.ret_1d, g.latest_price, g.latest_date, g.latest_ret,
+                       g.outcome_status
+                FROM signals s
+                LEFT JOIN signal_grades g ON g.signal_id = s.id
+                WHERE s.run_date = ?
+                ORDER BY s.id ASC
+                """,
+                (prev_date,),
+            ).fetchall()
+
+        items: list[dict[str, Any]] = []
+        evaluated_rets: list[float] = []
+        long_rets: list[float] = []
+        short_rets: list[float] = []
+
+        for r in rows:
+            next_ret = r["ret_1d"] if r["ret_1d"] is not None else r["latest_ret"]
+            verdict = "PENDING"
+            if next_ret is not None:
+                ret_f = float(next_ret)
+                evaluated_rets.append(ret_f)
+                if r["direction"] == "LONG":
+                    long_rets.append(ret_f)
+                else:
+                    short_rets.append(ret_f)
+                verdict = "CORRECT" if ret_f > 0 else ("FLAT" if ret_f == 0 else "INCORRECT")
+
+            items.append(
+                {
+                    "signal_id": int(r["id"]),
+                    "ticker": r["ticker"],
+                    "direction": r["direction"],
+                    "bucket": int(r["bucket"]),
+                    "ref_price": round(float(r["ref_price"]), 2),
+                    "latest_price": round(float(r["latest_price"]), 2) if r["latest_price"] is not None else None,
+                    "latest_date": r["latest_date"],
+                    "next_day_return_pct": round(float(next_ret) * 100.0, 2) if next_ret is not None else None,
+                    "verdict": verdict,
+                    "outcome_status": r["outcome_status"] or "OPEN",
+                }
+            )
+
+        hits = sum(1 for x in evaluated_rets if x > 0)
+        hit_rate = round((hits / len(evaluated_rets)) * 100.0, 1) if evaluated_rets else None
+        avg_ret = round((sum(evaluated_rets) / len(evaluated_rets)) * 100.0, 2) if evaluated_rets else None
+
+        gross_gains = sum(x for x in evaluated_rets if x > 0)
+        gross_losses = abs(sum(x for x in evaluated_rets if x < 0))
+        if not evaluated_rets:
+            profit_factor = None
+        elif gross_losses == 0:
+            profit_factor = round(gross_gains * 100.0, 2) if gross_gains > 0 else 0.0
+        else:
+            profit_factor = round(gross_gains / gross_losses, 2)
+
+        long_hits = sum(1 for x in long_rets if x > 0)
+        short_hits = sum(1 for x in short_rets if x > 0)
+
+        if evaluated_rets:
+            summary = (
+                f"From {prev_date}'s {len(items)} recommendations, {hits}/{len(evaluated_rets)} moved in the "
+                f"predicted direction ({hit_rate:.1f}% hit rate, avg signed return {avg_ret:+.2f}%, "
+                f"profit factor {profit_factor})."
+            )
+        else:
+            summary = (
+                f"{len(items)} recommendations from {prev_date} are logged and awaiting next-day closing prices to grade."
+            )
+
+        return {
+            "as_of": as_of_iso,
+            "previous_run_date": prev_date,
+            "total_recommendations": len(items),
+            "evaluated_count": len(evaluated_rets),
+            "hits": hits,
+            "hit_rate_pct": hit_rate,
+            "profit_factor": profit_factor,
+            "avg_signed_return_pct": avg_ret,
+            "long_accuracy": {
+                "count": len(long_rets),
+                "hits": long_hits,
+                "hit_rate_pct": round((long_hits / len(long_rets)) * 100.0, 1) if long_rets else None,
+            },
+            "short_accuracy": {
+                "count": len(short_rets),
+                "hits": short_hits,
+                "hit_rate_pct": round((short_hits / len(short_rets)) * 100.0, 1) if short_rets else None,
+            },
+            "items": items,
+            "plain_english_summary": summary,
+        }
 
     def get_30d_scorecard(self, as_of: dt.date) -> dict[str, Any]:
         """Emit a compact 30-day Scorecard per bucket (Win %, Avg R-Multiple, Mean +5d/+20d Alpha vs IWM)."""

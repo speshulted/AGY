@@ -10,7 +10,8 @@ description: >-
 Your job is to **falsify weak setups** before they enter `reports/YYYY-MM-DD.md`.
 
 ## Audit Checklist
-1. **Regime & 30-Day Scorecard Calibration**:
+1. **Prior-Day Accuracy & Regime Self-Calibration**:
+   - Audit `previous_day_accuracy` in `data/candidates_YYYY-MM-DD.json` and write a clear **`## Prior-Day Recommendation Accuracy Review`** table & plain-English summary covering yesterday's calls, actual next-day moves, Hit Rate %, Profit Factor, and Investing (Long) vs Short accuracy.
    - Inspect `macro.choppy_regime` (`VIX > 25` or `IWM < SMA50`) and `scorecard_30d` in `data/candidates_YYYY-MM-DD.json`.
    - In choppy regimes or when a bucket's trailing 30-day win rate is weak, drop low-conviction setups (`conviction < 4`) and tighten commentary.
 2. **Micro-Cap Safeguards (`$50M–$300M`)**:

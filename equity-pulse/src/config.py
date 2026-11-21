@@ -41,6 +41,11 @@ class UniverseConfig:
     min_reward_risk_ratio: float = 2.0
     max_candidates_per_bucket: int = 6
     numeric_tolerance_pct: float = 0.02
+    long_slots_per_bucket: int = 3
+    short_slots_per_bucket: int = 3
+    value_min_fcf_yield_ev: float = 0.07
+    growth_min_ttm_rev_growth: float = 0.15
+    max_net_debt_ebitda: float = 2.5
     ohlcv_chunk_size: int = 150
     max_pass2_enrich: int = 120
     smoke_tickers: list[str] = field(default_factory=list)
@@ -60,6 +65,7 @@ def load_universe_config(config_path: Path = CONFIG_PATH) -> UniverseConfig:
     micro = raw.get("micro_cap", {})
     cd = raw.get("cooldown_trading_days", {})
     val = raw.get("validation", {})
+    dual = raw.get("dual_strategy", {})
     fscan = raw.get("full_scan", {})
 
     return UniverseConfig(
@@ -82,6 +88,11 @@ def load_universe_config(config_path: Path = CONFIG_PATH) -> UniverseConfig:
         min_reward_risk_ratio=float(val.get("min_reward_risk_ratio", 2.0)),
         max_candidates_per_bucket=int(val.get("max_candidates_per_bucket", 6)),
         numeric_tolerance_pct=float(val.get("numeric_tolerance_pct", 0.02)),
+        long_slots_per_bucket=int(dual.get("long_slots_per_bucket", 3)),
+        short_slots_per_bucket=int(dual.get("short_slots_per_bucket", 3)),
+        value_min_fcf_yield_ev=float(dual.get("value_min_fcf_yield_ev", 0.07)),
+        growth_min_ttm_rev_growth=float(dual.get("growth_min_ttm_rev_growth", 0.15)),
+        max_net_debt_ebitda=float(dual.get("max_net_debt_ebitda", 2.5)),
         ohlcv_chunk_size=int(fscan.get("ohlcv_chunk_size", 150)),
         max_pass2_enrich=int(fscan.get("max_pass2_enrich", 120)),
         smoke_tickers=[str(t).upper() for t in raw.get("smoke_tickers", [])],

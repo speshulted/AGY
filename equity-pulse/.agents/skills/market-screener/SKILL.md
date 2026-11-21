@@ -34,11 +34,15 @@ Run all commands from the `equity-pulse/` directory using the project virtual en
    python -m src.cli validate-report --report reports/YYYY-MM-DD.md --candidates data/candidates_YYYY-MM-DD.json
    ```
    Must exit `0`. Fails if any ticker is blocklisted, invented, lacks a counter-thesis, or violates `R:R >= 2.0`.
-5. **Record verified survivors into SQLite Signal Ledger**:
+5. **Render graphic HTML web dashboard (`reports/YYYY-MM-DD.html` & `reports/index.html`)**:
+   ```bash
+   python -m src.cli render-html --report reports/YYYY-MM-DD.md --candidates data/candidates_YYYY-MM-DD.json
+   ```
+6. **Record verified survivors into SQLite Signal Ledger**:
    ```bash
    python -m src.cli record-ledger --report reports/YYYY-MM-DD.md --candidates data/candidates_YYYY-MM-DD.json --date YYYY-MM-DD
    ```
-6. **Dispatch mobile digest**:
+7. **Dispatch mobile digest**:
    ```bash
    python -m src.cli notify --report reports/YYYY-MM-DD.md
    ```

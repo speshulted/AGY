@@ -18,7 +18,7 @@ def format_mobile_digest(report_text: str, max_chars: int = 1800) -> str:
     """Extract title, plain-English summary, regime, and card takeaways into a mobile-friendly digest."""
     lines = report_text.splitlines()
     title = next((ln for ln in lines if ln.startswith("# ")), "# Equity Pulse Daily Digest")
-    summary_lines = [ln for ln in lines if re.match(r"^- \*\*(Market Mood|Macro|Regime|Scorecard)", ln)]
+    summary_lines = [ln for ln in lines if re.match(r"^- \*\*(Market Mood|Prior-Day Accuracy|Dual-Strategy|Macro|Regime|Scorecard)", ln)]
 
     card_entries: list[str] = []
     for idx, ln in enumerate(lines):

@@ -23,6 +23,7 @@ from src.ingest.sec_edgar import SecEdgarClient
 from src.ingest.universe import fetch_us_equity_universe, select_pass2_candidates
 from src.ledger.store import SignalLedger
 from src.notify.push import send_notifications
+from src.render_html import write_report_dashboard
 from src.screener.bucket_breakouts import score_bucket_1
 from src.screener.bucket_fundamentals import score_bucket_3
 from src.screener.bucket_swings import score_bucket_2
@@ -60,7 +61,17 @@ def cmd_grade_ledger(args: argparse.Namespace) -> int:
     ledger = SignalLedger()
     count = ledger.grade_ledger(_fetch_yf_history_bars, as_of=as_of)
     scorecard = ledger.get_30d_scorecard(as_of=as_of)
-    print(json.dumps({"graded_signals": count, "scorecard_30d": scorecard}, indent=2))
+    prev_day = ledger.get_previous_day_accuracy(as_of=as_of)
+    print(
+        json.dumps(
+            {
+                "graded_signals": count,
+                "previous_day_accuracy": prev_day,
+                "scorecard_30d": scorecard,
+            },
+            indent=2,
+        )
+    )
     return 0
 
 
@@ -223,15 +234,66 @@ def _plain_english_summary(c: dict[str, Any]) -> str:
     return explanation
 
 
+def _select_balanced_bucket(
+    items: list[dict[str, Any]],
+    long_slots: int,
+    short_slots: int,
+    total_cap: int,
+) -> list[dict[str, Any]]:
+    """Reserve dedicated slots for Investing (LONG) and SHORT setups before backfilling."""
+    longs = sorted([x for x in items if x["direction"] == "LONG"], key=lambda x: x["score"], reverse=True)
+    shorts = sorted([x for x in items if x["direction"] == "SHORT"], key=lambda x: x["score"], reverse=True)
+
+    picked = longs[:long_slots] + shorts[:short_slots]
+    if len(picked) < total_cap:
+        leftovers = sorted(longs[long_slots:] + shorts[short_slots:], key=lambda x: x["score"], reverse=True)
+        picked.extend(leftovers[: total_cap - len(picked)])
+    return picked[:total_cap]
+
+
+def _render_card_lines(c: dict[str, Any], b_idx: int) -> list[str]:
+    direction = c["direction"]
+    lines = [
+        f"### [{direction}] {c['ticker']} — Bucket {b_idx} ({c['horizon']})",
+        f"- **Plain-English Takeaway**: {_plain_english_summary(c)}",
+        f"- **Ref Price**: ${c['ref_price']:.2f} | **RVOL**: {c['rvol_20d']:.2f}x | **Market Cap**: ${c['market_cap']:,.0f}",
+        (
+            f"- **Entry Zone**: ${c['entry_low']:.2f} - ${c['entry_high']:.2f} | "
+            f"**Stop Price**: ${c['stop_price']:.2f} | **Target Price**: ${c['target_price']:.2f} "
+            f"(R:R {c['reward_risk_ratio']:.2f})"
+        ),
+        f"- **Deterministic Drivers**: {'; '.join(c.get('reasons', []))}",
+    ]
+    if c.get("warnings"):
+        lines.append(f"- **Risk Flags**: {'; '.join(c['warnings'])}")
+    if direction == "LONG":
+        lines.append("- **How this fails (Invalidation)**: Break below stop level or adverse SEC/dilution catalyst.")
+    else:
+        lines.append("- **Squeeze / Upside Hazard**: Monitor float liquidity, FINRA short-vol spikes, and upside binary news.")
+    lines.append("")
+    return lines
+
+
 def _render_sample_report(candidates_payload: dict[str, Any]) -> str:
     run_date = candidates_payload["run_date"]
     macro = candidates_payload.get("macro", {})
+    prev_acc = candidates_payload.get("previous_day_accuracy", {})
     choppy = bool(macro.get("choppy_regime", False))
     regime_plain = (
         "Small-cap stocks (IWM) are trading below their 50-day trend, signaling a choppy, higher-risk market—be extra selective."
         if choppy
         else "Broad small-cap trend is steady—normal conviction thresholds apply."
     )
+
+    all_longs: list[tuple[int, dict[str, Any]]] = []
+    all_shorts: list[tuple[int, dict[str, Any]]] = []
+    for b_idx in (1, 2, 3):
+        for c in candidates_payload["buckets"].get(f"bucket_{b_idx}", []):
+            if c["direction"] == "LONG":
+                all_longs.append((b_idx, c))
+            else:
+                all_shorts.append((b_idx, c))
+
     lines = [
         f"# Equity Pulse Daily Research Brief — {run_date}",
         "",
@@ -240,43 +302,58 @@ def _render_sample_report(candidates_payload: dict[str, Any]) -> str:
         "",
         "## Plain-English Summary",
         f"- **Market Mood**: {regime_plain}",
-        f"- **Scan Overview**: Checked {candidates_payload['stats']['total_loaded']} stocks; {candidates_payload['stats']['passed_universe']} met liquidity and blocklist rules.",
+        f"- **Prior-Day Accuracy**: {prev_acc.get('plain_english_summary', 'No prior-day calls graded yet.')}",
+        f"- **Dual-Strategy Overview**: Checked {candidates_payload['stats']['total_loaded']} stocks ({candidates_payload['stats']['passed_universe']} passed rules) -> {len(all_longs)} Investing (Long) and {len(all_shorts)} Short recommendations.",
         "",
-        "## Regime & 30-Day Scorecard",
-        f"- **Macro Regime**: VIX={macro.get('vix', 'N/A')} | IWM < SMA50={macro.get('iwm_below_sma50', False)} | Choppy={choppy}",
-        f"- **Universe Screened**: {candidates_payload['stats']['total_loaded']} loaded, {candidates_payload['stats']['passed_universe']} passed liquidity/blocklist gates.",
-        "",
-        "## Screened Candidates",
-        "",
+        "## Prior-Day Recommendation Accuracy Review",
     ]
 
-    any_card = False
-    for b_idx in (1, 2, 3):
-        items = candidates_payload["buckets"].get(f"bucket_{b_idx}", [])
-        if not items:
-            continue
-        any_card = True
-        for c in items:
-            direction = c["direction"]
-            lines.append(f"### [{direction}] {c['ticker']} — Bucket {b_idx} ({c['horizon']})")
-            lines.append(f"- **Plain-English Takeaway**: {_plain_english_summary(c)}")
-            lines.append(f"- **Ref Price**: ${c['ref_price']:.2f} | **RVOL**: {c['rvol_20d']:.2f}x | **Market Cap**: ${c['market_cap']:,.0f}")
+    prev_items = prev_acc.get("items", [])
+    if prev_items:
+        lines.append(
+            f"- **Prior Run Date**: {prev_acc.get('previous_run_date')} | "
+            f"**Hit Rate**: {prev_acc.get('hit_rate_pct')}% | "
+            f"**Profit Factor**: {prev_acc.get('profit_factor')} | "
+            f"**Avg Signed Return**: {prev_acc.get('avg_signed_return_pct')}%"
+        )
+        lines.append("")
+        lines.append("| Ticker | Side | Bucket | Entry Ref | Next Close | Signed Return | Verdict | Status |")
+        lines.append("| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
+        for it in prev_items:
+            lp = f"${it['latest_price']:.2f}" if it["latest_price"] is not None else "Pending"
+            nr = f"{it['next_day_return_pct']:+.2f}%" if it["next_day_return_pct"] is not None else "Pending"
             lines.append(
-                f"- **Entry Zone**: ${c['entry_low']:.2f} - ${c['entry_high']:.2f} | "
-                f"**Stop Price**: ${c['stop_price']:.2f} | **Target Price**: ${c['target_price']:.2f} "
-                f"(R:R {c['reward_risk_ratio']:.2f})"
+                f"| {it['ticker']} | {it['direction']} | {it['bucket']} | ${it['ref_price']:.2f} | {lp} | {nr} | {it['verdict']} | {it['outcome_status']} |"
             )
-            lines.append(f"- **Deterministic Drivers**: {'; '.join(c.get('reasons', []))}")
-            if c.get("warnings"):
-                lines.append(f"- **Risk Flags**: {'; '.join(c['warnings'])}")
-            if direction == "LONG":
-                lines.append("- **How this fails (Invalidation)**: Break below stop level or adverse SEC/dilution catalyst.")
-            else:
-                lines.append("- **Squeeze / Upside Hazard**: Monitor float liquidity, FINRA short-vol spikes, and upside binary news.")
-            lines.append("")
+        lines.append("")
+    else:
+        lines.append(f"_{prev_acc.get('plain_english_summary', 'No prior-day recommendations recorded yet.')}_")
+        lines.append("")
 
-    if not any_card:
-        lines.append("_No tickers met all strict Stage 1 bucket thresholds in this sample universe run._")
+    lines.extend(
+        [
+            "## Regime & 30-Day Scorecard",
+            f"- **Macro Regime**: VIX={macro.get('vix', 'N/A')} | IWM < SMA50={macro.get('iwm_below_sma50', False)} | Choppy={choppy}",
+            f"- **Universe Screened**: {candidates_payload['stats']['total_loaded']} loaded, {candidates_payload['stats']['passed_universe']} passed liquidity/blocklist gates.",
+            "",
+            "## Investing Recommendations (Long)",
+            "",
+        ]
+    )
+
+    if all_longs:
+        for b_idx, c in all_longs:
+            lines.extend(_render_card_lines(c, b_idx))
+    else:
+        lines.append("_No Investing (Long) setups met all strict Stage 1 thresholds today._")
+        lines.append("")
+
+    lines.extend(["## Short Recommendations", ""])
+    if all_shorts:
+        for b_idx, c in all_shorts:
+            lines.extend(_render_card_lines(c, b_idx))
+    else:
+        lines.append("_No Short setups met all strict Stage 1 thresholds today._")
         lines.append("")
 
     return "\n".join(lines)
@@ -317,13 +394,14 @@ def cmd_screen(args: argparse.Namespace) -> int:
             sink.extend(scorer(rec, cfg))
 
     cap = cfg.max_candidates_per_bucket
-    b1.sort(key=lambda x: x["score"], reverse=True)
-    b2.sort(key=lambda x: x["score"], reverse=True)
-    b3.sort(key=lambda x: x["score"], reverse=True)
+    b1_bal = _select_balanced_bucket(b1, cfg.long_slots_per_bucket, cfg.short_slots_per_bucket, cap)
+    b2_bal = _select_balanced_bucket(b2, cfg.long_slots_per_bucket, cfg.short_slots_per_bucket, cap)
+    b3_bal = _select_balanced_bucket(b3, cfg.long_slots_per_bucket, cfg.short_slots_per_bucket, cap)
 
     payload = {
         "run_date": run_date,
         "macro": macro,
+        "previous_day_accuracy": ledger.get_previous_day_accuracy(as_of),
         "scorecard_30d": ledger.get_30d_scorecard(as_of),
         "stats": {
             "total_loaded": len(records),
@@ -331,9 +409,9 @@ def cmd_screen(args: argparse.Namespace) -> int:
             "rejected": rejected,
         },
         "buckets": {
-            "bucket_1": b1[:cap],
-            "bucket_2": b2[:cap],
-            "bucket_3": b3[:cap],
+            "bucket_1": b1_bal,
+            "bucket_2": b2_bal,
+            "bucket_3": b3_bal,
         },
     }
 
@@ -350,7 +428,10 @@ def cmd_screen(args: argparse.Namespace) -> int:
         REPORTS_DIR.mkdir(parents=True, exist_ok=True)
         rep_path = REPORTS_DIR / f"{run_date}.md"
         rep_path.write_text(_render_sample_report(payload), encoding="utf-8")
+        html_path, index_path = write_report_dashboard(rep_path, out_path, output_dir=REPORTS_DIR)
         result_summary["report_path"] = str(rep_path)
+        result_summary["html_path"] = str(html_path)
+        result_summary["index_html_path"] = str(index_path)
 
     print(json.dumps(result_summary, indent=2))
     return 0
@@ -385,6 +466,15 @@ def cmd_record_ledger(args: argparse.Namespace) -> int:
 def cmd_notify(args: argparse.Namespace) -> int:
     out = send_notifications(Path(args.report), dry_run=args.dry_run)
     print(json.dumps(out, indent=2))
+    return 0
+
+
+def cmd_render_html(args: argparse.Namespace) -> int:
+    rep_path = Path(args.report)
+    cand_path = Path(args.candidates) if args.candidates else None
+    out_dir = Path(args.output_dir) if args.output_dir else rep_path.parent
+    dated_html, index_html = write_report_dashboard(rep_path, cand_path, output_dir=out_dir)
+    print(json.dumps({"html_path": str(dated_html), "index_html_path": str(index_html)}, indent=2))
     return 0
 
 
@@ -424,6 +514,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_not.add_argument("--report", required=True, help="Path to reports/YYYY-MM-DD.md")
     p_not.add_argument("--dry-run", action="store_true", help="Print digest without sending network requests")
     p_not.set_defaults(func=cmd_notify)
+
+    p_html = sub.add_parser("render-html", help="Render daily Markdown report into a graphic HTML web dashboard")
+    p_html.add_argument("--report", required=True, help="Path to reports/YYYY-MM-DD.md")
+    p_html.add_argument("--candidates", default=None, help="Optional path to data/candidates_YYYY-MM-DD.json")
+    p_html.add_argument("--output-dir", default=None, help="Output directory (default: same folder as report)")
+    p_html.set_defaults(func=cmd_render_html)
 
     return parser
 
