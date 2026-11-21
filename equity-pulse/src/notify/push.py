@@ -15,17 +15,29 @@ from src.config import load_env
 
 
 def format_mobile_digest(report_text: str, max_chars: int = 1800) -> str:
-    """Extract title, regime summary, and card headlines into a mobile-friendly markdown digest."""
+    """Extract title, plain-English summary, regime, and card takeaways into a mobile-friendly digest."""
     lines = report_text.splitlines()
     title = next((ln for ln in lines if ln.startswith("# ")), "# Equity Pulse Daily Digest")
-    cards = [ln for ln in lines if ln.startswith("### [")]
-    regime_lines = [ln for ln in lines if re.match(r"^- \*\*(Macro|Regime|Scorecard)", ln)]
+    summary_lines = [ln for ln in lines if re.match(r"^- \*\*(Market Mood|Macro|Regime|Scorecard)", ln)]
+
+    card_entries: list[str] = []
+    for idx, ln in enumerate(lines):
+        if ln.startswith("### ["):
+            headline = ln.replace("### ", "")
+            plain = ""
+            for nxt in lines[idx + 1 : idx + 6]:
+                if nxt.startswith("### ["):
+                    break
+                if "**Plain-English Takeaway**:" in nxt:
+                    plain = nxt.split("**Plain-English Takeaway**:", 1)[1].strip()
+                    break
+            card_entries.append(f"- **{headline}**" + (f" — {plain}" if plain else ""))
 
     parts = [title]
-    if regime_lines:
-        parts.append("\n".join(regime_lines[:4]))
-    if cards:
-        parts.append("**Top Setups:**\n" + "\n".join(f"- {c.replace('### ', '')}" for c in cards[:12]))
+    if summary_lines:
+        parts.append("\n".join(summary_lines[:4]))
+    if card_entries:
+        parts.append("**Top Setups:**\n" + "\n".join(card_entries[:10]))
     else:
         parts.append("No setups passed all screening & risk-critic gates today.")
 

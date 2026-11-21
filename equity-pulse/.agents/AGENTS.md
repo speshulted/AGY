@@ -8,3 +8,4 @@
    - Every **LONG** card MUST contain a `How this fails (Invalidation)` bullet.
    - Every **SHORT** card MUST contain a `Squeeze / Upside Hazard` bullet citing float size, FINRA short-vol %, and upcoming binary catalysts.
 6. **Deterministic Gate**: Always run `python -m src.cli validate-report --report reports/YYYY-MM-DD.md --candidates data/candidates_YYYY-MM-DD.json` and confirm exit code `0` before recording to the ledger or dispatching notifications.
+7. **Plain-Language Interpretation**: Every daily report MUST open with a short **Plain-English Summary** explaining the overall market mood and top takeaways without financial jargon, and every setup card MUST include a **Plain-English Takeaway** bullet translating the technical/accounting signals (such as RVOL, accrual divergence, Altman Z, ATR extension, and R:R) into clear, everyday language while keeping all verified numbers exact.

@@ -59,6 +59,7 @@ specialists = [
             f"Read `{candidates_path}` and analyze ONLY `buckets.bucket_1` and `buckets.bucket_2`. "
             "Verify qualitative catalyst context without inventing or altering any numeric metric. "
             "Return Markdown setup cards formatted as `### [LONG|SHORT] TICKER — Bucket N (horizon)` with "
+            "a `Plain-English Takeaway` bullet (explaining every technical/filing signal in everyday language), "
             "Ref Price, Entry Zone, Stop Price, Target Price (R:R >= 2.0), and mandatory counter-thesis."
         ),
     },
@@ -71,6 +72,7 @@ specialists = [
             "Verify fundamental/forensic drivers (FCF/EV, accruals, cash runway, S-3 baby-shelf cap, sector applicability) "
             "without inventing or altering any numeric metric. "
             "Return Markdown setup cards formatted as `### [LONG|SHORT] TICKER — Bucket 3 (1-6m+)` with "
+            "a `Plain-English Takeaway` bullet (explaining every accounting/balance-sheet signal in everyday language), "
             "Ref Price, Entry Zone, Stop Price, Target Price (R:R >= 2.0), and mandatory counter-thesis."
         ),
     },
@@ -90,7 +92,8 @@ phase("Stage 3: Adversarial Risk Critic & Deterministic Validation")
 critic_prompt = (
     f"Follow the role spec in `{repo_root / '.agents/agents/risk-critic.md'}` and rules in `{repo_root / '.agents/AGENTS.md'}`. "
     f"Audit the Stage 2 drafts below against `{candidates_path}` and `{repo_root / 'config/universe.yaml'}`.\n"
-    f"Drop weak, sector-inappropriate (e.g., bank Altman Z), or non-compliant setups, write the final verified report to `{report_path}`, "
+    f"Drop weak, sector-inappropriate (e.g., bank Altman Z), or non-compliant setups, write the final verified report to `{report_path}` "
+    "opening with a `## Plain-English Summary` section and ensuring EVERY surviving finding and EVERY rejection includes clear, jargon-free plain-English interpretation alongside exact verified numbers, "
     "and return a brief summary of surviving setups and rejections.\n\n"
     f"## Stage 2 Draft — Buckets 1 & 2\n{drafts[0]}\n\n"
     f"## Stage 2 Draft — Bucket 3\n{drafts[1]}\n"

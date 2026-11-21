@@ -114,17 +114,45 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _plain_english_summary(c: dict[str, Any]) -> str:
+    direction = c["direction"]
+    action = "bullish (potential upside)" if direction == "LONG" else "bearish (potential downside)"
+    drivers = "; ".join(c.get("reasons", []))
+    explanation = (
+        f"Flagged as a {action} idea over a {c['horizon']} window because of: {drivers}. "
+        f"The suggested plan risks ${abs(c['ref_price'] - c['stop_price']):.2f}/share to target "
+        f"${abs(c['target_price'] - c['ref_price']):.2f}/share ({c['reward_risk_ratio']:.2f}x reward-to-risk)."
+    )
+    if direction == "SHORT" and "Accrual divergence" in drivers:
+        explanation += " In plain terms, reported profits are running far ahead of actual cash coming in."
+    elif direction == "SHORT" and "Altman Z" in drivers:
+        explanation += " In plain terms, balance-sheet ratios point to tighter financial footing, though you should confirm whether the company is a bank or still generating cash."
+    elif direction == "LONG" and "FCF/EV" in drivers:
+        explanation += " In plain terms, the business generates strong free cash flow relative to its price while still growing sales."
+    return explanation
+
+
 def _render_sample_report(candidates_payload: dict[str, Any]) -> str:
     run_date = candidates_payload["run_date"]
     macro = candidates_payload.get("macro", {})
+    choppy = bool(macro.get("choppy_regime", False))
+    regime_plain = (
+        "Small-cap stocks (IWM) are trading below their 50-day trend, signaling a choppy, higher-risk market—be extra selective."
+        if choppy
+        else "Broad small-cap trend is steady—normal conviction thresholds apply."
+    )
     lines = [
         f"# Equity Pulse Daily Research Brief — {run_date}",
         "",
         "> Strictly research-only. All quantitative figures sourced deterministically from `candidates_"
         + f"{run_date}.json`.",
         "",
+        "## Plain-English Summary",
+        f"- **Market Mood**: {regime_plain}",
+        f"- **Scan Overview**: Checked {candidates_payload['stats']['total_loaded']} stocks; {candidates_payload['stats']['passed_universe']} met liquidity and blocklist rules.",
+        "",
         "## Regime & 30-Day Scorecard",
-        f"- **Macro Regime**: VIX={macro.get('vix', 'N/A')} | IWM < SMA50={macro.get('iwm_below_sma50', False)} | Choppy={macro.get('choppy_regime', False)}",
+        f"- **Macro Regime**: VIX={macro.get('vix', 'N/A')} | IWM < SMA50={macro.get('iwm_below_sma50', False)} | Choppy={choppy}",
         f"- **Universe Screened**: {candidates_payload['stats']['total_loaded']} loaded, {candidates_payload['stats']['passed_universe']} passed liquidity/blocklist gates.",
         "",
         "## Screened Candidates",
@@ -140,6 +168,7 @@ def _render_sample_report(candidates_payload: dict[str, Any]) -> str:
         for c in items:
             direction = c["direction"]
             lines.append(f"### [{direction}] {c['ticker']} — Bucket {b_idx} ({c['horizon']})")
+            lines.append(f"- **Plain-English Takeaway**: {_plain_english_summary(c)}")
             lines.append(f"- **Ref Price**: ${c['ref_price']:.2f} | **RVOL**: {c['rvol_20d']:.2f}x | **Market Cap**: ${c['market_cap']:,.0f}")
             lines.append(
                 f"- **Entry Zone**: ${c['entry_low']:.2f} - ${c['entry_high']:.2f} | "

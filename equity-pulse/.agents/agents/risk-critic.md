@@ -21,4 +21,7 @@ Your job is to **falsify weak setups** before they enter `reports/YYYY-MM-DD.md`
    - Confirm zero blocked tickers (`GOOG`, `GOOGL`, or any symbol in `config/universe.yaml` `do_not_trade`).
    - Verify every number matches `candidates_YYYY-MM-DD.json`, every card has `R:R >= 2.0`, and every card states a concrete counter-thesis (`How this fails (Invalidation)` or `Squeeze / Upside Hazard`).
 4. **Final Output**:
-   - Produce the final, publication-ready `reports/YYYY-MM-DD.md` containing only surviving verified setups, a concise Regime & 30-Day Scorecard header, and explicit rejection notes for dropped candidates.
+   - Produce the final, publication-ready `reports/YYYY-MM-DD.md` containing:
+     - A top **Plain-English Summary** translating the market regime and top setups into clear, jargon-free takeaways.
+     - Only surviving verified setups, each with a **Plain-English Takeaway** bullet alongside exact verified numbers and its mandatory counter-thesis.
+     - Explicit plain-English rejection notes for dropped candidates.

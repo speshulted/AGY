@@ -27,7 +27,11 @@ CANDIDATES = {
 
 VALID_REPORT = """# Equity Pulse Daily Research Brief — 2026-11-20
 
+## Plain-English Summary
+- **Market Mood**: Broad small-cap trend is steady.
+
 ### [LONG] ACME — Bucket 1 (1-5d)
+- **Plain-English Takeaway**: ACME broke out to a new high on heavy volume with 2.5x reward vs risk.
 - **Ref Price**: $25.00 | **RVOL**: 2.80x
 - **Entry Zone**: $24.75 - $25.25 | **Stop Price**: $23.00 | **Target Price**: $30.00
 - **How this fails (Invalidation)**: Break below $23.00 invalidates breakout structure.
