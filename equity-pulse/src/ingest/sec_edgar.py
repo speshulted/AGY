@@ -107,6 +107,9 @@ class XbrlFundamentals:
     cash_and_equivalents: float | None = None
     total_debt: float | None = None
     net_debt: float | None = None
+    shares_outstanding: float | None = None
+    derived_market_cap: float | None = None
+    derived_enterprise_value: float | None = None
     accrual_ratio: float | None = None        # (Net Income - OCF) / Total Assets
     cash_runway_quarters: float | None = None  # Cash / quarterly burn if OCF < 0
     altman_z: float | None = None
@@ -258,9 +261,27 @@ def _latest_annual_or_quarterly(entries: list[dict[str, Any]], annual_only: bool
 def extract_xbrl_fundamentals(
     companyfacts: dict[str, Any],
     market_cap: float | None = None,
+    ref_price: float | None = None,
 ) -> XbrlFundamentals:
     """Compute key fundamental, accrual, runway, and Altman Z metrics from XBRL companyfacts."""
-    us_gaap = companyfacts.get("facts", {}).get("us-gaap", {})
+    facts = companyfacts.get("facts", {})
+    us_gaap = facts.get("us-gaap", {})
+    dei = facts.get("dei", {})
+
+    shares_entries = _latest_fact_series(
+        dei, ["EntityCommonStockSharesOutstanding"], unit="shares"
+    ) or _latest_fact_series(
+        us_gaap,
+        ["CommonStockSharesOutstanding", "WeightedAverageNumberOfDilutedSharesOutstanding"],
+        unit="shares",
+    )
+    shares_outstanding = _latest_annual_or_quarterly(shares_entries)
+    derived_mcap = (
+        round(shares_outstanding * ref_price, 2)
+        if (shares_outstanding is not None and shares_outstanding > 0 and ref_price is not None and ref_price > 0)
+        else None
+    )
+    effective_mcap = market_cap if (market_cap is not None and market_cap > 0) else derived_mcap
 
     rev_entries = _latest_fact_series(
         us_gaap,
@@ -333,6 +354,11 @@ def extract_xbrl_fundamentals(
     st_debt_val = _latest_annual_or_quarterly(debt_short) or 0.0
     total_debt = (lt_debt_val + st_debt_val) if (debt_long or debt_short) else None
     net_debt = (total_debt - cash) if (total_debt is not None and cash is not None) else None
+    derived_ev = (
+        round(effective_mcap + (net_debt or 0.0), 2)
+        if effective_mcap is not None
+        else None
+    )
 
     accrual_ratio = None
     if net_income is not None and ocf is not None and total_assets not in (None, 0):
@@ -353,14 +379,14 @@ def extract_xbrl_fundamentals(
         and retained_earnings is not None
         and ebit is not None
         and ttm_rev is not None
-        and market_cap is not None
+        and effective_mcap is not None
     ):
         wc = current_assets - current_liabilities
         altman_z = (
             1.2 * (wc / total_assets)
             + 1.4 * (retained_earnings / total_assets)
             + 3.3 * (ebit / total_assets)
-            + 0.6 * (market_cap / total_liabilities)
+            + 0.6 * (effective_mcap / total_liabilities)
             + 1.0 * (ttm_rev / total_assets)
         )
 
@@ -383,6 +409,9 @@ def extract_xbrl_fundamentals(
         cash_and_equivalents=cash,
         total_debt=total_debt,
         net_debt=net_debt,
+        shares_outstanding=shares_outstanding,
+        derived_market_cap=derived_mcap,
+        derived_enterprise_value=derived_ev,
         accrual_ratio=accrual_ratio,
         cash_runway_quarters=cash_runway_quarters,
         altman_z=altman_z,
@@ -436,6 +465,7 @@ class SecEdgarClient:
         ticker: str,
         as_of: dt.date,
         market_cap: float | None = None,
+        ref_price: float | None = None,
         public_float_usd: float | None = None,
         dilution_lookback_days: int = 90,
         max_form4_xmls: int = 6,
@@ -542,7 +572,7 @@ class SecEdgarClient:
         fundamentals = XbrlFundamentals()
         try:
             facts = self.fetch_companyfacts(cik)
-            fundamentals = extract_xbrl_fundamentals(facts, market_cap=market_cap)
+            fundamentals = extract_xbrl_fundamentals(facts, market_cap=market_cap, ref_price=ref_price)
         except Exception:
             pass
 

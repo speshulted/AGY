@@ -112,7 +112,7 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         snapshots = fetch_bulk_ohlcv_snapshots(
-            all_symbols + ["SPY", "IWM"],
+            ["SPY", "IWM"] + all_symbols,
             exchange_map=exch_map,
             chunk_size=cfg.ohlcv_chunk_size,
             use_stooq_fallback=False,
@@ -129,8 +129,16 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         yf_session = _build_yf_session()
+        consecutive_info_misses = 0
         for sym in target_tickers:
+            if consecutive_info_misses >= 5:
+                # Yahoo .info is rate-limited; SEC XBRL shares_outstanding will backfill market_cap & EV
+                break
             enrich_snapshot_metadata(snapshots[sym], yf_session=yf_session)
+            if snapshots[sym].market_cap is None:
+                consecutive_info_misses += 1
+            else:
+                consecutive_info_misses = 0
 
     ingested = 0
     for sym in target_tickers:
@@ -142,10 +150,19 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             ticker=sym,
             as_of=as_of,
             market_cap=snap.market_cap,
+            ref_price=snap.close,
             public_float_usd=public_float_usd,
             dilution_lookback_days=cfg.dilution_lookback_days,
             max_form4_xmls=3 if args.smoke else 6,
         )
+        # Backfill market_cap / enterprise_value from SEC XBRL if Yahoo .info was rate-limited
+        sec_fund = sec_profile.get("fundamentals", {})
+        if snap.market_cap is None and sec_fund.get("derived_market_cap"):
+            snap.market_cap = float(sec_fund["derived_market_cap"])
+        if snap.enterprise_value is None and sec_fund.get("derived_enterprise_value"):
+            snap.enterprise_value = float(sec_fund["derived_enterprise_value"])
+        if snap.float_shares is None and sec_fund.get("shares_outstanding"):
+            snap.float_shares = float(sec_fund["shares_outstanding"])
         short_summary = summarize_short_trends(finra_maps, sym, float_shares=snap.float_shares)
         earnings_sig = fetch_finnhub_earnings_signal(sym, as_of)
 

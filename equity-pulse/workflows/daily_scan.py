@@ -26,6 +26,7 @@ log(f"Running Stage 1 deterministic pipeline for {run_date} in {repo_root}")
 await call_tool(
     "run_command",
     CommandLine=f"Set-Location '{repo_root}'; & '{python_exe}' -m src.cli grade-ledger --date {run_date}",
+    BypassSandbox=True,
     WaitMsBeforeAsync=10000,
     toolSummary="Grade historical signal ledger",
 )
@@ -121,6 +122,7 @@ await call_tool(
 await call_tool(
     "run_command",
     CommandLine=f"Set-Location '{repo_root}'; & '{python_exe}' -m src.cli notify --report '{report_path}'{dry_run_notify}",
+    BypassSandbox=True,
     WaitMsBeforeAsync=10000,
     toolSummary="Dispatch daily mobile digest",
 )

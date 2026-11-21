@@ -203,8 +203,10 @@ def fetch_bulk_ohlcv_snapshots(
     period: str = "1y",
     chunk_size: int = 150,
     use_stooq_fallback: bool = False,
+    chunk_pause_sec: float = 1.2,
 ) -> dict[str, MarketSnapshot]:
-    """Pass-1 bulk OHLCV fetcher: chunks tickers through yf.download without slow .info calls."""
+    """Pass-1 bulk OHLCV fetcher: chunks tickers through yf.download with polite pacing."""
+    import time
     import yfinance as yf
 
     clean = list(dict.fromkeys(t.upper() for t in tickers if t))
@@ -215,7 +217,9 @@ def fetch_bulk_ohlcv_snapshots(
     exch_lookup = exchange_map or {}
     snapshots: dict[str, MarketSnapshot] = {}
 
-    for start in range(0, len(clean), max(1, chunk_size)):
+    for batch_idx, start in enumerate(range(0, len(clean), max(1, chunk_size))):
+        if batch_idx > 0 and chunk_pause_sec > 0:
+            time.sleep(chunk_pause_sec)
         batch = clean[start : start + chunk_size]
         try:
             dl_kwargs: dict[str, Any] = {

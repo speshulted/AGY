@@ -120,3 +120,27 @@ def test_rate_limiter_bounds() -> None:
     limiter = TokenBucketRateLimiter(rate_per_sec=8.0)
     limiter.acquire()
     assert limiter.rate == 8.0
+
+
+def test_xbrl_derives_market_cap_and_ev_when_yahoo_missing() -> None:
+    companyfacts = {
+        "facts": {
+            "dei": {
+                "EntityCommonStockSharesOutstanding": {
+                    "units": {
+                        "shares": [
+                            {"form": "10-Q", "end": "2026-09-30", "filed": "2026-11-01", "val": 10_000_000}
+                        ]
+                    }
+                }
+            },
+            "us-gaap": {
+                "LongTermDebt": {"units": {"USD": [{"form": "10-Q", "end": "2026-09-30", "filed": "2026-11-01", "val": 50_000_000}]}},
+                "CashAndCashEquivalentsAtCarryingValue": {"units": {"USD": [{"form": "10-Q", "end": "2026-09-30", "filed": "2026-11-01", "val": 20_000_000}]}},
+            },
+        }
+    }
+    f = extract_xbrl_fundamentals(companyfacts, market_cap=None, ref_price=25.0)
+    assert f.shares_outstanding == 10_000_000
+    assert f.derived_market_cap == 250_000_000.0
+    assert f.derived_enterprise_value == 280_000_000.0
