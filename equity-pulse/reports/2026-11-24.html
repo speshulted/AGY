@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Equity Pulse Daily Research Dashboard — 2026-11-24</title>
+  <style>
+    :root {
+      --bg: #0b1120;
+      --panel: #111827;
+      --card: #162033;
+      --border: #24324a;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --long: #10b981;
+      --short: #f43f5e;
+      --warn: #f59e0b;
+      --accent: #38bdf8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      background: radial-gradient(circle at top right, #172554 0%, var(--bg) 42%);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .wrap { max-width: 1220px; margin: 0 auto; padding: 28px 20px 64px; }
+    header {
+      display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start;
+      gap: 16px; margin-bottom: 22px; border-bottom: 1px solid var(--border); padding-bottom: 18px;
+    }
+    h1 { margin: 0; font-size: 1.75rem; letter-spacing: -0.02em; }
+    .subtitle { color: var(--muted); font-size: 0.92rem; margin-top: 4px; }
+    .mood-pill {
+      padding: 6px 12px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em;
+    }
+    .mood-choppy { background: rgba(245, 158, 11, 0.16); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.45); }
+    .mood-steady { background: rgba(16, 185, 129, 0.16); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.45); }
+    .date-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .date-chip {
+      text-decoration: none; color: var(--muted); background: var(--panel); border: 1px solid var(--border);
+      padding: 4px 10px; border-radius: 8px; font-size: 0.8rem;
+    }
+    .date-chip.active { color: #fff; border-color: var(--accent); background: rgba(56, 189, 248, 0.15); }
+
+    .kpi-row {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 14px; margin-bottom: 22px;
+    }
+    .kpi {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px;
+    }
+    .kpi-lbl { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .kpi-val { font-size: 1.65rem; font-weight: 800; margin-top: 4px; }
+    .kpi-long { color: var(--long); }
+    .kpi-short { color: var(--short); }
+    .kpi-accent { color: var(--accent); }
+
+    .panel {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+      padding: 20px; margin-bottom: 22px;
+    }
+    .panel h2 { margin: 0 0 12px; font-size: 1.15rem; }
+    .split-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+
+    .gauge-track {
+      height: 10px; border-radius: 999px; background: #1e293b; overflow: hidden; margin: 10px 0 14px;
+    }
+    .gauge-fill { height: 100%; background: linear-gradient(90deg, #38bdf8, #10b981); }
+
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+    .filter-btn {
+      background: var(--panel); color: var(--text); border: 1px solid var(--border);
+      padding: 7px 14px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 0.85rem;
+    }
+    .filter-btn.active { background: var(--accent); color: #0b1120; border-color: var(--accent); }
+
+    .section-title {
+      font-size: 1.25rem; margin: 26px 0 14px; display: flex; align-items: center; gap: 10px;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .dot-long { background: var(--long); }
+    .dot-short { background: var(--short); }
+
+    .cards-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 18px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .ticker { margin: 6px 0 0; font-size: 1.45rem; letter-spacing: 0.02em; }
+    .badge {
+      display: inline-block; padding: 3px 9px; border-radius: 6px; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em;
+    }
+    .badge-long { background: rgba(16, 185, 129, 0.18); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.45); }
+    .badge-short { background: rgba(244, 63, 94, 0.18); color: #fda4af; border: 1px solid rgba(244, 63, 94, 0.45); }
+    .bucket-pill { color: var(--muted); font-size: 0.78rem; margin-left: 6px; }
+    .rr-box { text-align: right; background: rgba(15, 23, 42, 0.7); padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); }
+    .rr-val { font-size: 1.15rem; font-weight: 800; color: var(--accent); }
+    .rr-lbl { font-size: 0.7rem; color: var(--muted); }
+
+    .plain-box {
+      background: rgba(56, 189, 248, 0.08); border-left: 3px solid var(--accent);
+      padding: 10px 12px; border-radius: 8px;
+    }
+    .plain-title { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); font-weight: 700; margin-bottom: 4px; }
+    .plain-box p { margin: 0; font-size: 0.9rem; color: #e2e8f0; }
+
+    .ladder-svg, .chart-svg { width: 100%; height: auto; display: block; }
+    .metrics-grid {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
+      background: rgba(15, 23, 42, 0.55); border-radius: 10px; padding: 10px 12px;
+    }
+    .m-lbl { display: block; font-size: 0.72rem; color: var(--muted); }
+    .drivers, .counter, .risk-flag { font-size: 0.85rem; color: #cbd5e1; }
+    .risk-flag {
+      background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35);
+      color: #fde68a; padding: 8px 10px; border-radius: 8px;
+    }
+    .sec-links { display: flex; flex-wrap: wrap; gap: 8px; }
+    .sec-link {
+      color: var(--accent); font-size: 0.8rem; text-decoration: none;
+      border: 1px solid rgba(56, 189, 248, 0.35); padding: 3px 9px; border-radius: 6px;
+    }
+    .empty-card {
+      background: var(--panel); border: 1px dashed var(--border); border-radius: 14px;
+      padding: 18px; color: var(--muted); font-size: 0.9rem;
+    }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th, td { padding: 9px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+    th { color: var(--muted); font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .verdict { padding: 2px 8px; border-radius: 6px; font-weight: 700; font-size: 0.75rem; }
+    .verdict-ok { background: rgba(16, 185, 129, 0.18); color: #6ee7b7; }
+    .verdict-bad { background: rgba(244, 63, 94, 0.18); color: #fda4af; }
+    .verdict-wait { background: rgba(148, 163, 184, 0.18); color: #cbd5e1; }
+    .muted { color: var(--muted); margin: 0; font-size: 0.9rem; }
+    .rej-list { margin: 0; padding-left: 18px; color: var(--muted); font-size: 0.86rem; columns: 2; }
+    footer { margin-top: 34px; color: var(--muted); font-size: 0.8rem; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Equity Pulse — Daily Research Dashboard</h1>
+        <div class="subtitle">Run Date: <strong>2026-11-24</strong> · Strictly Research-Only · Deterministic Metrics Verified</div>
+        <div class="date-nav"><a class="date-chip active" href="2026-11-24.html">2026-11-24</a><a class="date-chip " href="2026-11-23.html">2026-11-23</a><a class="date-chip " href="2026-11-20.html">2026-11-20</a></div>
+      </div>
+      <span class="mood-pill mood-choppy">CHOPPY REGIME</span>
+    </header>
+
+    <section class="kpi-row">
+      <div class="kpi"><div class="kpi-lbl">Investing (Long)</div><div class="kpi-val kpi-long">1</div></div>
+      <div class="kpi"><div class="kpi-lbl">Short Setups</div><div class="kpi-val kpi-short">0</div></div>
+      <div class="kpi"><div class="kpi-lbl">Prior-Day Hit Rate</div><div class="kpi-val kpi-accent">100.0%</div></div>
+      <div class="kpi"><div class="kpi-lbl">Profit Factor</div><div class="kpi-val">10.05</div></div>
+      <div class="kpi"><div class="kpi-lbl">Universe Checked</div><div class="kpi-val">120</div></div>
+    </section>
+
+    <div class="split-2">
+      <section class="panel">
+        <h2>Plain-English Market Mood</h2>
+        <p style="margin:0; color:#e2e8f0;">Small-cap stocks (IWM) are trading below their 50-day trend—choppy regime, be selective.</p>
+        <div style="margin-top:14px;">
+          <div class="kpi-lbl">Prior-Day Accuracy Summary</div>
+          <div class="gauge-track"><div class="gauge-fill" style="width:100.0%"></div></div>
+          <p class="muted">From 2026-11-23&#x27;s 4 recommendations, 4/4 moved in the predicted direction (100.0% hit rate, avg signed return +2.51%, profit factor 10.05).</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Candidate Score Comparison</h2>
+        <svg class="chart-svg" viewBox="0 0 420 60" role="img" aria-label="Candidate Score Comparison"><text x="6" y="29" fill="#cbd5e1" font-size="11" font-weight="600">ANF (LONG)</text><rect x="118" y="17" width="260" height="16" rx="4" fill="#1e293b"/><rect x="118" y="17" width="226.4" height="16" rx="4" fill="#10b981"/><text x="386" y="29" fill="#f8fafc" font-size="11" font-weight="600">87</text></svg>
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2>Prior-Day Recommendation Accuracy Review</h2>
+      <div class="table-wrap"><table><thead><tr><th>Ticker</th><th>Side</th><th>Bucket</th><th>Ref Price</th><th>Next Close</th><th>Signed Return</th><th>Verdict</th><th>Status</th></tr></thead><tbody><tr><td><strong>AN</strong></td><td>LONG</td><td>B2</td><td>$175.48</td><td>$181.50</td><td>+3.43%</td><td><span class="verdict verdict-ok">CORRECT</span></td><td>OPEN</td></tr><tr><td><strong>ABG</strong></td><td>LONG</td><td>B3</td><td>$198.95</td><td>$203.09</td><td>+2.08%</td><td><span class="verdict verdict-ok">CORRECT</span></td><td>OPEN</td></tr><tr><td><strong>NJR</strong></td><td>LONG</td><td>B3</td><td>$55.54</td><td>$57.24</td><td>+3.06%</td><td><span class="verdict verdict-ok">CORRECT</span></td><td>OPEN</td></tr><tr><td><strong>FUBO</strong></td><td>SHORT</td><td>B3</td><td>$5.53</td><td>$5.45</td><td>+1.48%</td><td><span class="verdict verdict-ok">CORRECT</span></td><td>OPEN</td></tr></tbody></table></div>
+    </section>
+
+    <div class="filters" role="group" aria-label="Filter recommendations">
+      <button class="filter-btn active" onclick="filterCards('ALL', this)">All (1)</button>
+      <button class="filter-btn" onclick="filterCards('LONG', this)">Investing Long (1)</button>
+      <button class="filter-btn" onclick="filterCards('SHORT', this)">Shorts (0)</button>
+    </div>
+
+    <h2 class="section-title"><span class="dot dot-long"></span> Investing Recommendations (Long)</h2>
+    <section class="cards-grid" id="long-grid">
+    <article class="card" data-side="LONG" data-bucket="1">
+      <div class="card-top">
+        <div>
+          <span class="badge badge-long">INVESTING LONG</span>
+          <span class="bucket-pill">Bucket 1 · 1-5d</span>
+          <h3 class="ticker">ANF</h3>
+        </div>
+        <div class="rr-box">
+          <div class="rr-val">2.20x</div>
+          <div class="rr-lbl">Reward / Risk</div>
+        </div>
+      </div>
+
+      <div class="plain-box">
+        <div class="plain-title">Plain-English Takeaway</div>
+        <p>Abercrombie &amp; Fitch delivered a strong earnings beat, raised full-year sales and profit targets, and surged to a 55-day closing high on `2.51x` normal trading volume (`$172.16M` average daily dollar volume). The stock sits in a clean uptrend above its 20-, 50-, and 200-day averages with a `2.20` reward-to-risk setup and zero share-dilution risk. **Key discipline note**: after a `13.1%` opening gap, the stock is stretched `+2.06` ATR above its 20-day average and sits just below its `$178.38` 52-week high inside a choppy small/mid-cap market—avoid chasing vertical spikes and wait for orderly pullbacks toward the `$172.00` breakout area.</p>
+      </div>
+
+      <svg class="ladder-svg" viewBox="0 0 400 72" role="img" aria-label="Price Risk Reward Ladder"><line x1="24" y1="36" x2="376" y2="36" stroke="#334155" stroke-width="6" stroke-linecap="round"/><line x1="48.3" y1="36" x2="143.1" y2="36" stroke="#64748b" stroke-width="8" stroke-linecap="round"/><line x1="143.1" y1="36" x2="351.7" y2="36" stroke="#10b981" stroke-width="8" stroke-linecap="round"/><circle cx="48.3" cy="36" r="6" fill="#ef4444" stroke="#0f172a" stroke-width="2"/><circle cx="143.1" cy="36" r="6" fill="#f8fafc" stroke="#0f172a" stroke-width="2"/><circle cx="351.7" cy="36" r="6" fill="#10b981" stroke="#0f172a" stroke-width="2"/><text x="48.3" y="18" text-anchor="middle" fill="#fca5a5" font-size="10" font-weight="600">Stop $161.97</text><text x="143.1" y="62" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="700">Ref $174.58</text><text x="351.7" y="18" text-anchor="middle" fill="#6ee7b7" font-size="10" font-weight="600">Target $202.32</text></svg>
+
+      <div class="metrics-grid">
+        <div><span class="m-lbl">Ref Price</span><strong>$174.58</strong></div>
+        <div><span class="m-lbl">Entry Zone</span><strong>$172.83–$176.33</strong></div>
+        <div><span class="m-lbl">Market Cap</span><strong>$7.49B</strong></div>
+        <div><span class="m-lbl">RVOL (20d)</span><strong>2.51x</strong></div>
+      </div>
+
+      <div class="drivers"><strong>Drivers:</strong> `RVOL20 = 2.51x`; stacked uptrend (`Close $174.58 &gt; SMA20 $153.79 &gt; EMA20 $151.24 &gt; SMA50 $148.57 &gt; SMA200 $109.19`); `55d breakout close` above `high_55d` (`$172.00`); `Gap 13.1%` on positive 8-K (`prev_close $140.45`); `stabilizing_rs: true`; `has_lower_high_under_sma50: false`; `ATR14` `$10.09`, `atr_extension` `2.06`; `score: 87.07`; `days_to_earnings: 0`.</div>
+      
+      <div class="counter"><strong>How This Fails (Invalidation):</strong> A failed breakout back below the `$172.00` 55-day pivot that breaks the `$161.97` Stop Price (roughly `1.25x` ATR below entry), driven by post-gap profit-taking at `$178.38` 52-week resistance, renewed U.S. tariff margin concerns, or choppy-regime (`IWM &lt; SMA50`) market selling.</div>
+      <div class="sec-links"><a class="sec-link" href="https://www.sec.gov/Archives/edgar/data/1018840/000101884026000052/anf-20261124.htm" target="_blank" rel="noopener">SEC Filing 1</a></div>
+    </article>
+    </section>
+
+    <h2 class="section-title"><span class="dot dot-short"></span> Short Recommendations</h2>
+    <section class="cards-grid" id="short-grid"><div class="empty-card">No Short recommendations passed all strict thresholds in this scan.</div></section>
+
+    <section class="panel" style="margin-top:26px;">
+      <h2>Filtered &amp; Blocklisted Tickers</h2>
+      <ul class="rej-list"><li><strong>ASR</strong> — below min market cap</li></ul>
+    </section>
+
+    <footer>
+      Equity Pulse Research Agent · Research-only dashboard generated from <code>reports/2026-11-24.md</code> and <code>data/candidates_2026-11-24.json</code>.
+    </footer>
+  </div>
+
+  <script>
+    function filterCards(side, btn) {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.card').forEach(el => {
+        el.style.display = (side === 'ALL' || el.dataset.side === side) ? 'flex' : 'none';
+      });
+    }
+  </script>
+</body>
+</html>
